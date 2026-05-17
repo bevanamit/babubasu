@@ -1,0 +1,181 @@
+//@version=6
+indicator("EMA Pullback Continuation Bullish + Bearish with RSI", overlay=true)
+
+// ======================================================
+// EMAs
+// ======================================================
+
+ema9  = ta.ema(close, 9)
+ema21 = ta.ema(close, 21)
+
+plot(ema9, color=color.green, linewidth=2)
+plot(ema21, color=color.red, linewidth=2)
+
+// ======================================================
+// RSI (Default Settings)
+// ======================================================
+
+rsiValue = ta.rsi(close, 14)
+
+plot(rsiValue, title="RSI", color=color.blue, display=display.data_window)
+
+// ======================================================
+// COMMON CANDLE STRUCTURE
+// ======================================================
+
+bodySize    = math.abs(close - open)
+rangeSize   = high - low
+upperWick   = high - math.max(open, close)
+lowerWick   = math.min(open, close) - low
+
+// ======================================================
+// BULLISH LOGIC
+// ======================================================
+
+// Trend condition
+trendBullish = ema9 > ema21
+
+// Detect fresh crossover
+bullCross = ta.crossover(ema9, ema21)
+
+// State management
+var bool bullWaitingForPullback = false
+var bool bullPullbackHappened = false
+
+// Start tracking after bullish crossover
+if bullCross
+    bullWaitingForPullback := true
+    bullPullbackHappened := false
+
+// Cancel setup if trend lost
+if ema9 <= ema21
+    bullWaitingForPullback := false
+    bullPullbackHappened := false
+
+// Invalidate if price goes below 21 EMA
+if low < ema21
+    bullWaitingForPullback := false
+    bullPullbackHappened := false
+
+// Pullback condition
+bullPullback =
+     bullWaitingForPullback and
+     trendBullish and
+     low <= ema9 and
+     low >= ema21
+
+if bullPullback
+    bullPullbackHappened := true
+
+// Bullish candle
+bullishCandle = close > open
+
+// Strong close above 9 EMA
+bullStrongClose = close > ema9
+
+// Momentum candle
+bullMomentumCandle =
+     bodySize > rangeSize * 0.6 and
+     upperWick < bodySize * 0.15
+
+// Hammer candle
+hammerCandle =
+     lowerWick > bodySize * 1.5 and
+     upperWick < bodySize * 0.25
+
+// Final bullish signal
+bullEntrySignal =
+     trendBullish and
+     bullPullbackHappened and
+     bullishCandle and
+     bullStrongClose and
+     (bullMomentumCandle or hammerCandle)
+
+// Reset after signal
+if bullEntrySignal
+    bullPullbackHappened := false
+
+// Plot bullish signal
+plotshape(
+     bullEntrySignal,
+     location=location.belowbar,
+     style=shape.triangleup,
+     color=color.lime,
+     size=size.small
+)
+
+// ======================================================
+// BEARISH LOGIC
+// ======================================================
+
+// Trend condition
+trendBearish = ema9 < ema21
+
+// Detect fresh bearish crossover
+bearCross = ta.crossunder(ema9, ema21)
+
+// State management
+var bool bearWaitingForPullback = false
+var bool bearPullbackHappened = false
+
+// Start tracking after bearish crossover
+if bearCross
+    bearWaitingForPullback := true
+    bearPullbackHappened := false
+
+// Cancel setup if trend lost
+if ema9 >= ema21
+    bearWaitingForPullback := false
+    bearPullbackHappened := false
+
+// Invalidate if price goes above 21 EMA
+if high > ema21
+    bearWaitingForPullback := false
+    bearPullbackHappened := false
+
+// Pullback condition
+bearPullback =
+     bearWaitingForPullback and
+     trendBearish and
+     high >= ema9 and
+     high <= ema21
+
+if bearPullback
+    bearPullbackHappened := true
+
+// Bearish candle
+bearishCandle = close < open
+
+// Strong close below 9 EMA
+bearStrongClose = close < ema9
+
+// Momentum bearish candle
+bearMomentumCandle =
+     bodySize > rangeSize * 0.6 and
+     lowerWick < bodySize * 0.15
+
+// Shooting star candle
+shootingStarCandle =
+     upperWick > bodySize * 1.5 and
+     lowerWick < bodySize * 0.25
+
+// Final bearish signal
+bearEntrySignal =
+     trendBearish and
+     bearPullbackHappened and
+     bearishCandle and
+     bearStrongClose and
+     (bearMomentumCandle or shootingStarCandle)
+
+// Reset after signal
+if bearEntrySignal
+    bearPullbackHappened := false
+
+// Plot bearish signal
+plotshape(
+     bearEntrySignal,
+     location=location.abovebar,
+     style=shape.triangledown,
+     color=color.red,
+     size=size.small
+)
