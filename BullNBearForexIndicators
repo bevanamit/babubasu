@@ -1,0 +1,18 @@
+//@version=6
+indicator("Separate RSI Confirmation Pane", overlay=false)
+
+// RSI
+rsiLength = input.int(14, title="RSI Length")
+rsiValue  = ta.rsi(close, rsiLength)
+
+// Plot RSI
+plot(rsiValue, title="RSI", color=color.blue, linewidth=2)
+
+// Levels
+hline(60, "Overbought", color=color.red)
+hline(50, "Midline", color=color.gray)
+hline(40, "Oversold", color=color.green)
+
+// Background coloring
+bgcolor(rsiValue > 70 ? color.new(color.red, 90) :
+       rsiValue < 30 ? color.new(color.green, 90) : na)
