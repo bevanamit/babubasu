@@ -1,181 +1,292 @@
 //@version=6
-indicator("EMA Pullback Continuation Bullish + Bearish with RSI", overlay=true)
+indicator("EMA Pullback Continuation Bullish + Bearish with RSI + 1H Confirmation", overlay=true)
 
 // ======================================================
-// EMAs
+// EMA SETTINGS
 // ======================================================
 
 ema9  = ta.ema(close, 9)
 ema21 = ta.ema(close, 21)
 
-plot(ema9, color=color.green, linewidth=2)
-plot(ema21, color=color.red, linewidth=2)
+plot(ema9, color=color.green, linewidth=2, title="EMA 9")
+plot(ema21, color=color.red, linewidth=2, title="EMA 21")
 
 // ======================================================
-// RSI (Default Settings)
+// HIGHER TIMEFRAME (1 HOUR) CONFIRMATION
+// ======================================================
+
+htfBullish = request.security(
+     syminfo.tickerid,
+     "60",
+     close[1] > open[1],
+     lookahead = barmerge.lookahead_off
+)
+
+htfBearish = request.security(
+     syminfo.tickerid,
+     "60",
+     close[1] < open[1],
+     lookahead = barmerge.lookahead_off
+)
+
+// ======================================================
+// RSI
 // ======================================================
 
 rsiValue = ta.rsi(close, 14)
 
-plot(rsiValue, title="RSI", color=color.blue, display=display.data_window)
+plot(
+     rsiValue,
+     title="RSI",
+     color=color.blue,
+     display=display.data_window
+)
 
 // ======================================================
 // COMMON CANDLE STRUCTURE
 // ======================================================
 
-bodySize    = math.abs(close - open)
-rangeSize   = high - low
-upperWick   = high - math.max(open, close)
-lowerWick   = math.min(open, close) - low
+bodySize  = math.abs(close - open)
+rangeSize = high - low
+
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
 
 // ======================================================
-// BULLISH LOGIC
+// STATE VARIABLES
 // ======================================================
 
-// Trend condition
-trendBullish = ema9 > ema21
+// Bullish states
+var bullTrendActive = false
+var bullMoveAwayDone = false
+var bullPullbackDone = false
 
-// Detect fresh crossover
+// Bearish states
+var bearTrendActive = false
+var bearMoveAwayDone = false
+var bearPullbackDone = false
+
+// ======================================================
+// CROSSOVERS
+// ======================================================
+
 bullCross = ta.crossover(ema9, ema21)
+bearCross = ta.crossunder(ema9, ema21)
 
-// State management
-var bool bullWaitingForPullback = false
-var bool bullPullbackHappened = false
+// ======================================================
+// BULLISH TREND LOGIC
+// ======================================================
 
-// Start tracking after bullish crossover
+// Activate bullish trend
 if bullCross
-    bullWaitingForPullback := true
-    bullPullbackHappened := false
+    bullTrendActive := true
+    bullMoveAwayDone := false
+    bullPullbackDone := false
 
-// Cancel setup if trend lost
+    // Reset bearish state
+    bearTrendActive := false
+    bearMoveAwayDone := false
+    bearPullbackDone := false
+
+// Invalidate bullish trend
 if ema9 <= ema21
-    bullWaitingForPullback := false
-    bullPullbackHappened := false
+    bullTrendActive := false
+    bullMoveAwayDone := false
+    bullPullbackDone := false
 
-// Invalidate if price goes below 21 EMA
-if low < ema21
-    bullWaitingForPullback := false
-    bullPullbackHappened := false
+// ======================================================
+// STEP 1:
+// PRICE MUST MOVE AWAY FROM 21 EMA
+// ======================================================
 
-// Pullback condition
-bullPullback =
-     bullWaitingForPullback and
-     trendBullish and
-     low <= ema9 and
-     low >= ema21
+bullMoveAway =
+     bullTrendActive and
+     close > ema9 and
+     close > ema21
 
-if bullPullback
-    bullPullbackHappened := true
+if bullMoveAway
+    bullMoveAwayDone := true
 
-// Bullish candle
-bullishCandle = close > open
+// ======================================================
+// STEP 2:
+// VALID RETEST OF 21 EMA
+// ======================================================
 
-// Strong close above 9 EMA
-bullStrongClose = close > ema9
+// Retest candle must actually touch 21 EMA
+validBullRetest =
+     bullMoveAwayDone and
+     low <= ema21 and
+     close > ema21
 
-// Momentum candle
+// Pullback valid ONLY on retest candle
+if validBullRetest
+    bullPullbackDone := true
+else
+    bullPullbackDone := false
+
+// ======================================================
+// BULLISH CONFIRMATION CANDLE
+// ======================================================
+
+bullishCandle =
+     close > open
+
+bullStrongClose =
+     close > ema9
+
 bullMomentumCandle =
      bodySize > rangeSize * 0.6 and
      upperWick < bodySize * 0.15
 
-// Hammer candle
 hammerCandle =
      lowerWick > bodySize * 1.5 and
      upperWick < bodySize * 0.25
 
-// Final bullish signal
+// Signal ONLY after retest candle
 bullEntrySignal =
-     trendBullish and
-     bullPullbackHappened and
+     bullTrendActive and
+     bullPullbackDone[1] and
      bullishCandle and
      bullStrongClose and
+     htfBullish and
      (bullMomentumCandle or hammerCandle)
 
-// Reset after signal
+// Reset after bullish signal
 if bullEntrySignal
-    bullPullbackHappened := false
-
-// Plot bullish signal
-plotshape(
-     bullEntrySignal,
-     location=location.belowbar,
-     style=shape.triangleup,
-     color=color.lime,
-     size=size.small
-)
+    bullMoveAwayDone := false
+    bullPullbackDone := false
 
 // ======================================================
-// BEARISH LOGIC
+// BEARISH TREND LOGIC
 // ======================================================
 
-// Trend condition
-trendBearish = ema9 < ema21
-
-// Detect fresh bearish crossover
-bearCross = ta.crossunder(ema9, ema21)
-
-// State management
-var bool bearWaitingForPullback = false
-var bool bearPullbackHappened = false
-
-// Start tracking after bearish crossover
+// Activate bearish trend
 if bearCross
-    bearWaitingForPullback := true
-    bearPullbackHappened := false
+    bearTrendActive := true
+    bearMoveAwayDone := false
+    bearPullbackDone := false
 
-// Cancel setup if trend lost
+    // Reset bullish state
+    bullTrendActive := false
+    bullMoveAwayDone := false
+    bullPullbackDone := false
+
+// Invalidate bearish trend
 if ema9 >= ema21
-    bearWaitingForPullback := false
-    bearPullbackHappened := false
+    bearTrendActive := false
+    bearMoveAwayDone := false
+    bearPullbackDone := false
 
-// Invalidate if price goes above 21 EMA
-if high > ema21
-    bearWaitingForPullback := false
-    bearPullbackHappened := false
+// ======================================================
+// STEP 1:
+// PRICE MUST MOVE AWAY FROM 21 EMA
+// ======================================================
 
-// Pullback condition
-bearPullback =
-     bearWaitingForPullback and
-     trendBearish and
-     high >= ema9 and
-     high <= ema21
+bearMoveAway =
+     bearTrendActive and
+     close < ema9 and
+     close < ema21
 
-if bearPullback
-    bearPullbackHappened := true
+if bearMoveAway
+    bearMoveAwayDone := true
 
-// Bearish candle
-bearishCandle = close < open
+// ======================================================
+// STEP 2:
+// VALID RETEST OF 21 EMA
+// ======================================================
 
-// Strong close below 9 EMA
-bearStrongClose = close < ema9
+// Candle must properly retest EMA21
+validBearRetest =
+     bearMoveAwayDone and
+     high >= ema21 and
+     close < ema21
 
-// Momentum bearish candle
+// Pullback valid ONLY on retest candle
+if validBearRetest
+    bearPullbackDone := true
+else
+    bearPullbackDone := false
+
+// ======================================================
+// BEARISH CONFIRMATION CANDLE
+// ======================================================
+
+bearishCandle =
+     close < open
+
+bearStrongClose =
+     close < ema9
+
 bearMomentumCandle =
      bodySize > rangeSize * 0.6 and
      lowerWick < bodySize * 0.15
 
-// Shooting star candle
 shootingStarCandle =
      upperWick > bodySize * 1.5 and
      lowerWick < bodySize * 0.25
 
-// Final bearish signal
+// Signal ONLY after retest candle
 bearEntrySignal =
-     trendBearish and
-     bearPullbackHappened and
+     bearTrendActive and
+     bearPullbackDone[1] and
      bearishCandle and
      bearStrongClose and
+     htfBearish and
      (bearMomentumCandle or shootingStarCandle)
 
-// Reset after signal
+// Reset after bearish signal
 if bearEntrySignal
-    bearPullbackHappened := false
+    bearMoveAwayDone := false
+    bearPullbackDone := false
 
-// Plot bearish signal
+// ======================================================
+// SIGNAL PLOTS
+// ======================================================
+
+plotshape(
+     bullEntrySignal,
+     title="BUY",
+     location=location.belowbar,
+     style=shape.triangleup,
+     color=color.lime,
+     size=size.small,
+     text="BUY"
+)
+
 plotshape(
      bearEntrySignal,
+     title="SELL",
      location=location.abovebar,
      style=shape.triangledown,
      color=color.red,
-     size=size.small
+     size=size.small,
+     text="SELL"
+)
+
+// ======================================================
+// BAR COLORS
+// ======================================================
+
+barcolor(
+     bullEntrySignal
+     ? color.lime
+     : bearEntrySignal
+     ? color.red
+     : na
+)
+
+// ======================================================
+// ALERTS
+// ======================================================
+
+alertcondition(
+     bullEntrySignal,
+     title="Bullish Entry Alert",
+     message="Bullish EMA Pullback Continuation Signal"
+)
+
+alertcondition(
+     bearEntrySignal,
+     title="Bearish Entry Alert",
+     message="Bearish EMA Pullback Continuation Signal"
 )
