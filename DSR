@@ -1,0 +1,210 @@
+//@version=6
+indicator("30M Revisit Zone Reversal Signals", overlay=true, max_boxes_count=500, max_labels_count=500)
+
+// =====================================================
+// SETTINGS
+// =====================================================
+
+tolerancePerc = input.float(10.0, "Body Match Tolerance %", step=0.1)
+minBarsWait   = input.int(8, "Minimum Bars Before Revisit", minval=1)
+showZones     = input.bool(true, "Show Zones")
+
+// =====================================================
+// ENSURE 30 MIN CHART
+// =====================================================
+
+is30m = timeframe.period == "30"
+
+if not is30m
+    runtime.error("Please use this indicator only on 30 minute timeframe.")
+
+// =====================================================
+// PREVIOUS + CURRENT CANDLE DATA
+// =====================================================
+
+prevOpen  = open[1]
+prevClose = close[1]
+prevHigh  = high[1]
+prevLow   = low[1]
+
+currOpen  = open
+currClose = close
+currHigh  = high
+currLow   = low
+
+// =====================================================
+// CANDLE TYPES
+// =====================================================
+
+prevBearish = prevClose < prevOpen
+prevBullish = prevClose > prevOpen
+
+currBullish = currClose > currOpen
+currBearish = currClose < currOpen
+
+// =====================================================
+// BODY MATCH LOGIC
+// =====================================================
+
+prevBodySize = math.abs(prevOpen - prevClose)
+tolerance    = prevBodySize * (tolerancePerc / 100)
+
+bodyMatch =
+     math.abs(prevClose - currOpen) <= tolerance and
+     math.abs(prevOpen - currClose) <= tolerance
+
+// =====================================================
+// BULLISH PATTERN
+// =====================================================
+
+bullishPattern =
+     prevBearish and
+     currBullish and
+     bodyMatch
+
+bullZoneTop    = math.max(prevClose, currOpen)
+bullZoneBottom = math.min(prevLow, currLow)
+
+// =====================================================
+// BEARISH PATTERN
+// =====================================================
+
+bearishPattern =
+     prevBullish and
+     currBearish and
+     bodyMatch
+
+bearZoneTop    = math.max(prevHigh, currHigh)
+bearZoneBottom = math.min(prevClose, currOpen)
+
+// =====================================================
+// STORAGE VARIABLES
+// =====================================================
+
+var float activeBullTop    = na
+var float activeBullBottom = na
+var int   bullPatternBar   = na
+var bool  bullSignalDone   = false
+var box   bullBox          = na
+
+var float activeBearTop    = na
+var float activeBearBottom = na
+var int   bearPatternBar   = na
+var bool  bearSignalDone   = false
+var box   bearBox          = na
+
+// =====================================================
+// STORE BULLISH PATTERN
+// =====================================================
+
+if bullishPattern
+    activeBullTop    := bullZoneTop
+    activeBullBottom := bullZoneBottom
+    bullPatternBar   := bar_index
+    bullSignalDone   := false
+
+    if showZones
+        if not na(bullBox)
+            box.delete(bullBox)
+
+        bullBox := box.new(
+             bar_index,
+             activeBullTop,
+             bar_index + 1,
+             activeBullBottom,
+             bgcolor = color.new(color.green, 85),
+             border_color = color.new(color.green, 40)
+         )
+
+// Extend bullish zone
+if showZones and not na(bullBox)
+    box.set_right(bullBox, bar_index)
+
+// =====================================================
+// STORE BEARISH PATTERN
+// =====================================================
+
+if bearishPattern
+    activeBearTop    := bearZoneTop
+    activeBearBottom := bearZoneBottom
+    bearPatternBar   := bar_index
+    bearSignalDone   := false
+
+    if showZones
+        if not na(bearBox)
+            box.delete(bearBox)
+
+        bearBox := box.new(
+             bar_index,
+             activeBearTop,
+             bar_index + 1,
+             activeBearBottom,
+             bgcolor = color.new(color.red, 85),
+             border_color = color.new(color.red, 40)
+         )
+
+// Extend bearish zone
+if showZones and not na(bearBox)
+    box.set_right(bearBox, bar_index)
+
+// =====================================================
+// BUY SIGNAL LOGIC
+// =====================================================
+
+bullReady =
+     not na(bullPatternBar) and
+     (bar_index - bullPatternBar >= minBarsWait)
+
+bullTouch =
+     low <= activeBullTop and
+     high >= activeBullBottom
+
+buySignal =
+     bullReady and
+     bullTouch and
+     not bullSignalDone
+
+if buySignal
+    bullSignalDone := true
+
+// =====================================================
+// SELL SIGNAL LOGIC
+// =====================================================
+
+bearReady =
+     not na(bearPatternBar) and
+     (bar_index - bearPatternBar >= minBarsWait)
+
+bearTouch =
+     low <= activeBearTop and
+     high >= activeBearBottom
+
+sellSignal =
+     bearReady and
+     bearTouch and
+     not bearSignalDone
+
+if sellSignal
+    bearSignalDone := true
+
+// =====================================================
+// PLOT SIGNALS
+// =====================================================
+
+plotshape(
+     buySignal,
+     title     = "BUY",
+     style     = shape.arrowup,
+     location  = location.belowbar,
+     color     = color.green,
+     size      = size.normal
+)
+
+plotshape(
+     sellSignal,
+     title     = "SELL",
+     style     = shape.arrowdown,
+     location  = location.abovebar,
+     color     = color.red,
+     size      = size.normal
+)
